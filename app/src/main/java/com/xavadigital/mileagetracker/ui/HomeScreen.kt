@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,12 +56,14 @@ import com.xavadigital.mileagetracker.data.AppGraph
 import com.xavadigital.mileagetracker.data.Trip
 import com.xavadigital.mileagetracker.export.CsvExporter
 import com.xavadigital.mileagetracker.tracking.RecordingState
+import com.xavadigital.mileagetracker.tracking.TripNotifications
 import com.xavadigital.mileagetracker.tracking.TripRecordingService
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 private val tripDateFormat = DateTimeFormatter.ofPattern("EEE d MMM yyyy, h:mm a")
@@ -72,9 +75,32 @@ private fun hasLocationPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
 
+/**
+ * The chronologically previous trip, if this trip looks like a continuation of it —
+ * a petrol stop, school pickup, etc.: started within 15 min and 300 m of where the
+ * previous one ended.
+ */
+private fun findMergeCandidate(trip: Trip, trips: List<Trip>): Trip? {
+    val previous = trips
+        .filter { it.id != trip.id && it.startTime < trip.startTime }
+        .maxByOrNull { it.startTime } ?: return null
+    val gapMillis = trip.startTime - previous.endTime
+    if (gapMillis !in 0..15 * 60_000L) return null
+    val startLat = trip.startLat ?: return null
+    val startLng = trip.startLng ?: return null
+    val endLat = previous.endLat ?: return null
+    val endLng = previous.endLng ?: return null
+    val distance = FloatArray(1)
+    android.location.Location.distanceBetween(endLat, endLng, startLat, startLng, distance)
+    return if (distance[0] <= 300f) previous else null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    classifyRequest: MutableStateFlow<Long?>,
+    onOpenSettings: () -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -84,6 +110,16 @@ fun HomeScreen() {
     val driverName by AppGraph.settings.driverName.collectAsState(initial = null)
 
     var classifying by remember { mutableStateOf<Trip?>(null) }
+
+    // A "Work…" tap on the trip-finished notification lands here with a trip id.
+    val requestedTripId by classifyRequest.collectAsState()
+    LaunchedEffect(requestedTripId, trips) {
+        val id = requestedTripId ?: return@LaunchedEffect
+        trips.find { it.id == id }?.let {
+            classifying = it
+            classifyRequest.value = null
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -100,6 +136,9 @@ fun HomeScreen() {
                 actions = {
                     IconButton(onClick = { scope.launch { CsvExporter.shareCsv(context) } }) {
                         Icon(Icons.Default.Share, contentDescription = "Export CSV")
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
@@ -163,17 +202,45 @@ fun HomeScreen() {
     }
 
     classifying?.let { trip ->
+        val mergeCandidate = remember(trip, trips) { findMergeCandidate(trip, trips) }
         ClassifyDialog(
             trip = trip,
             businesses = businesses,
             onDismiss = { classifying = null },
             onSave = { updated ->
-                scope.launch { AppGraph.tripDao.update(updated) }
+                scope.launch {
+                    AppGraph.tripDao.update(updated)
+                    TripNotifications.cancelClassifyPrompt(context, trip.id)
+                }
                 classifying = null
             },
             onDelete = {
-                scope.launch { AppGraph.tripDao.delete(trip) }
+                scope.launch {
+                    AppGraph.tripDao.delete(trip)
+                    TripNotifications.cancelClassifyPrompt(context, trip.id)
+                }
                 classifying = null
+            },
+            onMerge = mergeCandidate?.let { previous ->
+                {
+                    scope.launch {
+                        AppGraph.tripDao.update(
+                            previous.copy(
+                                endTime = trip.endTime,
+                                distanceMeters = previous.distanceMeters + trip.distanceMeters,
+                                endLat = trip.endLat,
+                                endLng = trip.endLng,
+                                endAddress = trip.endAddress,
+                                polyline = listOfNotNull(previous.polyline, trip.polyline)
+                                    .joinToString(";").ifBlank { null },
+                            )
+                        )
+                        AppGraph.tripDao.delete(trip)
+                        TripNotifications.cancelClassifyPrompt(context, trip.id)
+                        TripNotifications.cancelClassifyPrompt(context, previous.id)
+                    }
+                    classifying = null
+                }
             }
         )
     }
@@ -295,6 +362,7 @@ private fun ClassifyDialog(
     onDismiss: () -> Unit,
     onSave: (Trip) -> Unit,
     onDelete: () -> Unit,
+    onMerge: (() -> Unit)? = null,
 ) {
     var isWork by remember {
         mutableStateOf(if (trip.type == Trip.TYPE_UNCLASSIFIED) true else trip.type == Trip.TYPE_WORK)
@@ -346,6 +414,11 @@ private fun ClassifyDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+                if (onMerge != null) {
+                    TextButton(onClick = onMerge) {
+                        Text("Merge into previous trip (short stop)")
+                    }
                 }
             }
         },

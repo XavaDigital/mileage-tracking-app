@@ -48,6 +48,7 @@ class TripRecordingService : Service() {
     private var startTime = 0L
     private var recording = false
     private var finishing = false
+    private var source = Trip.SOURCE_MANUAL
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -64,13 +65,15 @@ class TripRecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startRecording()
+            ACTION_START -> startRecording(
+                intent.getStringExtra(EXTRA_SOURCE) ?: Trip.SOURCE_MANUAL
+            )
             ACTION_STOP -> stopRecording()
         }
         return START_STICKY
     }
 
-    private fun startRecording() {
+    private fun startRecording(tripSource: String) {
         if (recording || finishing) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
@@ -91,7 +94,9 @@ class TripRecordingService : Service() {
         distanceMeters = 0.0
         points.clear()
         recording = true
+        source = tripSource
         _state.value = RecordingState(startTime, 0.0)
+        TripNotifications.cancelStartFallback(this)
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
             .setMinUpdateDistanceMeters(10f)
@@ -165,12 +170,13 @@ class TripRecordingService : Service() {
             startAddress = startAddress,
             endAddress = endAddress,
             driver = driver,
-            source = Trip.SOURCE_MANUAL,
+            source = source,
             polyline = points.joinToString(";") {
                 String.format(Locale.US, "%.5f,%.5f", it.latitude, it.longitude)
             },
         )
-        AppGraph.tripDao.insert(trip)
+        val id = AppGraph.tripDao.insert(trip)
+        TripNotifications.postClassifyPrompt(this, trip.copy(id = id))
     }
 
     private fun createChannel() {
@@ -215,6 +221,7 @@ class TripRecordingService : Service() {
     companion object {
         const val ACTION_START = "com.xavadigital.mileagetracker.action.START_TRIP"
         const val ACTION_STOP = "com.xavadigital.mileagetracker.action.STOP_TRIP"
+        const val EXTRA_SOURCE = "source"
         private const val CHANNEL_ID = "trip_recording"
         private const val NOTIFICATION_ID = 1
 
@@ -223,9 +230,10 @@ class TripRecordingService : Service() {
         /** Non-null while a trip is being recorded; observed by the UI. */
         val state: StateFlow<RecordingState?> = _state.asStateFlow()
 
-        fun start(context: Context) {
+        fun start(context: Context, source: String = Trip.SOURCE_MANUAL) {
             val intent = Intent(context, TripRecordingService::class.java)
                 .setAction(ACTION_START)
+                .putExtra(EXTRA_SOURCE, source)
             ContextCompat.startForegroundService(context, intent)
         }
 

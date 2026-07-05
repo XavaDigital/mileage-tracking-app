@@ -8,8 +8,12 @@ with CSV export for the accountant. See [docs/PLAN.md](docs/PLAN.md) for the ful
 **Phase 1** — manual start/stop trip recording (GPS foreground service), local Room database,
 trip history with work/personal + business classification, CSV export via share sheet.
 
-Upcoming: Bluetooth auto start/stop (phase 2), shared Google Sheet sync (phase 3),
-NFC tag trigger + polish (phase 4).
+**Phase 2** — automatic trip detection from the car's Bluetooth (connect = start,
+disconnect = stop), end-of-trip notification with one-tap Work…/Personal/Passenger
+actions, merge-into-previous-trip for petrol stops, settings screen (car picker,
+background location + battery-exemption onboarding).
+
+Upcoming: shared Google Sheet sync (phase 3), NFC tag trigger + polish (phase 4).
 
 ## Building
 

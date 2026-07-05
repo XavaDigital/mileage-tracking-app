@@ -3,9 +3,19 @@
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
+
+    <uses-feature
+        android:name="android.software.companion_device_setup"
+        android:required="false" />
 
     <application
         android:name=".MileageApp"
@@ -29,6 +39,21 @@
             android:name=".tracking.TripRecordingService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- ACL_CONNECTED/DISCONNECTED are protected broadcasts (system-only senders),
+             and are exempt from implicit-broadcast limits, so this fires app-dead. -->
+        <receiver
+            android:name=".tracking.CarBluetoothReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".tracking.TripActionReceiver"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

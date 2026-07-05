@@ -72,9 +72,11 @@ lat/lng endpoints, polyline. Optional odometer start/end columns later (ATO-styl
 
 1. **Core loop** ✅ — manual start/stop, GPS foreground service, Room, history list,
    classify dialog, driver name, CSV export.
-2. **Automation** — Bluetooth auto start/stop (pick car device from paired list),
-   end-of-trip classification notification with [Work…]/[Personal]/[Passenger] actions,
-   merge-short-stops, background location + battery exemption onboarding.
+2. **Automation** ✅ — Bluetooth auto start/stop (pick car device from paired list,
+   CompanionDeviceManager association for background FGS starts, one-tap "Driving?"
+   notification as fallback), end-of-trip classification notification with
+   [Work…]/[Personal]/[Passenger] actions, merge-into-previous-trip for short stops,
+   settings screen with background location + battery exemption onboarding.
 3. **Shared log** — Google Sign-In, Sheets sync via WorkManager (retry until landed),
    driver from account, second phone onboarded, duplicate-trip overlap detection
    (both drivers in the car).

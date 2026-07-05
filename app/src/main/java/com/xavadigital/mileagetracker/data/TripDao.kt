@@ -18,6 +18,9 @@ interface TripDao {
     @Delete
     suspend fun delete(trip: Trip)
 
+    @Query("SELECT * FROM trips WHERE id = :id")
+    suspend fun getById(id: Long): Trip?
+
     @Query("SELECT * FROM trips ORDER BY startTime DESC")
     fun observeAll(): Flow<List<Trip>>
 
