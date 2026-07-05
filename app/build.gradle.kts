@@ -15,6 +15,14 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // OAuth client id (public, not a secret). Unused by the Play Services
+        // authorization flow itself — kept for future Google ID-token needs.
+        buildConfigField(
+            "String",
+            "GOOGLE_CLIENT_ID",
+            "\"273765857524-837m333nlq58hl8ccmksnpir2ghjhs4d.apps.googleusercontent.com\""
+        )
     }
 
     buildTypes {
@@ -31,6 +39,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -47,5 +56,8 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.play.services.location)
+    implementation(libs.play.services.auth)
+    implementation(libs.kotlinx.coroutines.play.services)
 }

@@ -174,6 +174,7 @@ class TripRecordingService : Service() {
             polyline = points.joinToString(";") {
                 String.format(Locale.US, "%.5f,%.5f", it.latitude, it.longitude)
             },
+            entryId = java.util.UUID.randomUUID().toString(),
         )
         val id = AppGraph.tripDao.insert(trip)
         TripNotifications.postClassifyPrompt(this, trip.copy(id = id))

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.xavadigital.mileagetracker.data.AppGraph
 import com.xavadigital.mileagetracker.data.Trip
+import com.xavadigital.mileagetracker.sync.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,9 +25,17 @@ class TripActionReceiver : BroadcastReceiver() {
                 val trip = dao.getById(tripId)
                 if (trip != null) {
                     when (action) {
-                        ACTION_MARK_PERSONAL -> dao.update(
-                            trip.copy(type = Trip.TYPE_PERSONAL, business = null, purpose = null)
-                        )
+                        ACTION_MARK_PERSONAL -> {
+                            dao.update(
+                                trip.copy(
+                                    type = Trip.TYPE_PERSONAL,
+                                    business = null,
+                                    purpose = null,
+                                    syncedAt = null,
+                                )
+                            )
+                            SyncScheduler.syncNow(context)
+                        }
                         ACTION_DISCARD -> dao.delete(trip)
                     }
                 }

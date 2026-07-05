@@ -21,6 +21,10 @@ data class Trip(
     val driver: String = "",
     val source: String = SOURCE_MANUAL,
     val polyline: String? = null,
+    /** Stable id used to find/update this trip's row in the shared sheet. */
+    val entryId: String? = null,
+    /** When this trip's current state last landed in the sheet; null = needs sync. */
+    val syncedAt: Long? = null,
 ) {
     val distanceKm: Double get() = distanceMeters / 1000.0
 

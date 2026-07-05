@@ -3,6 +3,7 @@ package com.xavadigital.mileagetracker.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,10 @@ class SettingsRepository(private val context: Context) {
     private val carAddressKey = stringPreferencesKey("car_bt_address")
     private val carNameKey = stringPreferencesKey("car_bt_name")
     private val autoTrackKey = booleanPreferencesKey("auto_track_enabled")
+    private val spreadsheetIdKey = stringPreferencesKey("spreadsheet_id")
+    private val sheetsConnectedKey = booleanPreferencesKey("sheets_connected")
+    private val lastSyncTimeKey = longPreferencesKey("last_sync_time")
+    private val lastSyncErrorKey = stringPreferencesKey("last_sync_error")
 
     val driverName: Flow<String> = context.dataStore.data.map { it[driverKey] ?: "" }
 
@@ -36,5 +41,26 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAutoTrackEnabled(enabled: Boolean) {
         context.dataStore.edit { it[autoTrackKey] = enabled }
+    }
+
+    val spreadsheetId: Flow<String?> = context.dataStore.data.map { it[spreadsheetIdKey] }
+    val sheetsConnected: Flow<Boolean> =
+        context.dataStore.data.map { it[sheetsConnectedKey] ?: false }
+    val lastSyncTime: Flow<Long?> = context.dataStore.data.map { it[lastSyncTimeKey] }
+    val lastSyncError: Flow<String?> = context.dataStore.data.map { it[lastSyncErrorKey] }
+
+    suspend fun setSpreadsheetId(id: String) {
+        context.dataStore.edit { it[spreadsheetIdKey] = id }
+    }
+
+    suspend fun setSheetsConnected(connected: Boolean) {
+        context.dataStore.edit { it[sheetsConnectedKey] = connected }
+    }
+
+    suspend fun setLastSync(time: Long?, error: String?) {
+        context.dataStore.edit {
+            if (time != null) it[lastSyncTimeKey] = time
+            if (error != null) it[lastSyncErrorKey] = error else it.remove(lastSyncErrorKey)
+        }
     }
 }

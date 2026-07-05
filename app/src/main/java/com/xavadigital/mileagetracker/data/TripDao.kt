@@ -28,6 +28,15 @@ interface TripDao {
     suspend fun getAllChronological(): List<Trip>
 
     @Query(
+        "SELECT * FROM trips WHERE type != 'UNCLASSIFIED' AND syncedAt IS NULL " +
+            "ORDER BY startTime ASC"
+    )
+    suspend fun getPendingSync(): List<Trip>
+
+    @Query("SELECT * FROM trips WHERE type = 'UNCLASSIFIED'")
+    suspend fun getUnclassified(): List<Trip>
+
+    @Query(
         "SELECT DISTINCT business FROM trips " +
             "WHERE business IS NOT NULL AND business != '' ORDER BY business"
     )

@@ -55,6 +55,7 @@ import androidx.core.content.ContextCompat
 import com.xavadigital.mileagetracker.data.AppGraph
 import com.xavadigital.mileagetracker.data.Trip
 import com.xavadigital.mileagetracker.export.CsvExporter
+import com.xavadigital.mileagetracker.sync.SyncScheduler
 import com.xavadigital.mileagetracker.tracking.RecordingState
 import com.xavadigital.mileagetracker.tracking.TripNotifications
 import com.xavadigital.mileagetracker.tracking.TripRecordingService
@@ -209,8 +210,9 @@ fun HomeScreen(
             onDismiss = { classifying = null },
             onSave = { updated ->
                 scope.launch {
-                    AppGraph.tripDao.update(updated)
+                    AppGraph.tripDao.update(updated.copy(syncedAt = null))
                     TripNotifications.cancelClassifyPrompt(context, trip.id)
+                    SyncScheduler.syncNow(context)
                 }
                 classifying = null
             },
@@ -233,11 +235,13 @@ fun HomeScreen(
                                 endAddress = trip.endAddress,
                                 polyline = listOfNotNull(previous.polyline, trip.polyline)
                                     .joinToString(";").ifBlank { null },
+                                syncedAt = null,
                             )
                         )
                         AppGraph.tripDao.delete(trip)
                         TripNotifications.cancelClassifyPrompt(context, trip.id)
                         TripNotifications.cancelClassifyPrompt(context, previous.id)
+                        SyncScheduler.syncNow(context)
                     }
                     classifying = null
                 }

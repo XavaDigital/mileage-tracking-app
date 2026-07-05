@@ -17,7 +17,7 @@ object AppGraph {
             context.applicationContext,
             AppDatabase::class.java,
             "mileage.db"
-        ).build()
+        ).addMigrations(AppDatabase.MIGRATION_1_2).build()
         settings = SettingsRepository(context.applicationContext)
     }
 }

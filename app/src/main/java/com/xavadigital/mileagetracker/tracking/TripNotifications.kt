@@ -69,6 +69,39 @@ object TripNotifications {
     }
 
     /**
+     * The other driver already logged an overlapping trip in the shared sheet —
+     * re-prompt this unclassified trip with Passenger as the likely answer.
+     */
+    fun postPassengerSuggestion(context: Context, trip: Trip, otherDriver: String) {
+        ensureReviewChannel(context)
+        val km = String.format(Locale.US, "%.1f km", trip.distanceKm)
+        val workIntent = PendingIntent.getActivity(
+            context,
+            trip.id.toInt(),
+            Intent(context, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_CLASSIFY_TRIP_ID, trip.id)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val passengerIntent = actionIntent(context, TripActionReceiver.ACTION_DISCARD, trip.id)
+        val personalIntent = actionIntent(context, TripActionReceiver.ACTION_MARK_PERSONAL, trip.id)
+
+        val notification = NotificationCompat.Builder(context, REVIEW_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_directions)
+            .setContentTitle("Were you a passenger? — $km")
+            .setContentText("$otherDriver logged an overlapping trip")
+            .setContentIntent(workIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .addAction(0, "Passenger", passengerIntent)
+            .addAction(0, "No, mine — Work…", workIntent)
+            .addAction(0, "Personal", personalIntent)
+            .build()
+
+        notifySafe(context, notificationIdFor(trip.id), notification)
+    }
+
+    /**
      * Fallback when Android refuses to auto-start the recording service from the
      * background (no companion-device association yet): one tap starts the trip.
      */

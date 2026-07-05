@@ -13,7 +13,13 @@ disconnect = stop), end-of-trip notification with one-tap Work…/Personal/Passe
 actions, merge-into-previous-trip for petrol stops, settings screen (car picker,
 background location + battery-exemption onboarding).
 
-Upcoming: shared Google Sheet sync (phase 3), NFC tag trigger + polish (phase 4).
+**Phase 3** — shared Google Sheet sync: both drivers' classified trips land in one
+spreadsheet (create or link it in Settings), rows update in place on re-classification,
+and overlapping trips from the other driver trigger a "were you a passenger?" prompt.
+Needs an Android OAuth client (package name + debug SHA-1) and the Google Sheets API
+enabled in the Google Cloud project.
+
+Upcoming: NFC tag trigger + polish (phase 4).
 
 ## Building
 

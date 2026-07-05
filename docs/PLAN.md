@@ -77,8 +77,12 @@ lat/lng endpoints, polyline. Optional odometer start/end columns later (ATO-styl
    notification as fallback), end-of-trip classification notification with
    [Work…]/[Personal]/[Passenger] actions, merge-into-previous-trip for short stops,
    settings screen with background location + battery exemption onboarding.
-3. **Shared log** — Google Sign-In, Sheets sync via WorkManager (retry until landed),
-   driver from account, second phone onboarded, duplicate-trip overlap detection
-   (both drivers in the car).
+3. **Shared log** ✅ — Play Services authorization (Sheets scope, silent token refresh
+   for background sync), lightweight Sheets REST client (no Google API client libs),
+   WorkManager sync (on classify + 6-hourly, network-constrained, exponential backoff),
+   Entry Id column so re-classified trips update their row instead of duplicating,
+   create-or-link shared spreadsheet from Settings, passenger-duplicate overlap
+   detection against the other driver's rows. Requires: Android OAuth client
+   (package + SHA-1) and Sheets API enabled in the Google Cloud project.
 4. **Polish** — NFC tag support, purpose autocomplete, per-financial-year export,
    monthly km-per-business summary, home-screen widget.

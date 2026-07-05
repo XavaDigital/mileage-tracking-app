@@ -58,7 +58,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.xavadigital.mileagetracker.data.AppGraph
+import com.xavadigital.mileagetracker.sync.GoogleAuth
+import com.xavadigital.mileagetracker.sync.SheetsApi
+import com.xavadigital.mileagetracker.sync.SyncScheduler
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private data class BondedDevice(val name: String, val address: String)
 
@@ -81,6 +89,15 @@ private fun hasBackgroundLocation(context: Context): Boolean =
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
     context.getSystemService(PowerManager::class.java)
         ?.isIgnoringBatteryOptimizations(context.packageName) == true
+
+/** Accepts a full Google Sheets URL or a bare spreadsheet id. */
+private fun extractSpreadsheetId(input: String): String? {
+    val trimmed = input.trim()
+    Regex("/d/([a-zA-Z0-9_-]{20,})").find(trimmed)?.let { return it.groupValues[1] }
+    return Regex("^[a-zA-Z0-9_-]{20,}$").find(trimmed)?.value
+}
+
+private val lastSyncFormat = DateTimeFormatter.ofPattern("EEE d MMM, h:mm a")
 
 /**
  * Registers the car as a companion device so Android lets us start the recording
@@ -125,6 +142,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     val carName by settings.carName.collectAsState(initial = null)
     val carAddress by settings.carAddress.collectAsState(initial = null)
     val driverName by settings.driverName.collectAsState(initial = "")
+    val sheetsConnected by settings.sheetsConnected.collectAsState(initial = false)
+    val spreadsheetId by settings.spreadsheetId.collectAsState(initial = null)
+    val lastSyncTime by settings.lastSyncTime.collectAsState(initial = null)
+    val lastSyncError by settings.lastSyncError.collectAsState(initial = null)
 
     // Permission states can change in system settings — re-check on every resume.
     var refresh by remember { mutableIntStateOf(0) }
@@ -141,10 +162,24 @@ fun SettingsScreen(onBack: () -> Unit) {
     val batteryExempt = remember(refresh) { isIgnoringBatteryOptimizations(context) }
 
     var showDevicePicker by remember { mutableStateOf(false) }
+    var sheetStatus by remember { mutableStateOf<String?>(null) }
 
     val cdmLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { }
+    val googleAuthLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) {
+        scope.launch {
+            if (GoogleAuth.getAccessToken(context) != null) {
+                settings.setSheetsConnected(true)
+                sheetStatus = null
+                SyncScheduler.syncNow(context)
+            } else {
+                sheetStatus = "Google authorization was not completed"
+            }
+        }
+    }
     val btPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -243,6 +278,126 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                 }
             )
+
+            HorizontalDivider()
+            Text("Google Sheets sync", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Google account", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (sheetsConnected) "Connected" else "Not connected",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            val result = GoogleAuth.authorize(context)
+                            val resolution = result.pendingIntent
+                            if (result.hasResolution() && resolution != null) {
+                                googleAuthLauncher.launch(
+                                    IntentSenderRequest.Builder(resolution.intentSender).build()
+                                )
+                            } else {
+                                settings.setSheetsConnected(true)
+                                sheetStatus = null
+                                SyncScheduler.syncNow(context)
+                            }
+                        } catch (e: Exception) {
+                            sheetStatus = "Google authorization failed: ${e.message}"
+                        }
+                    }
+                }) { Text(if (sheetsConnected) "Reconnect" else "Connect") }
+            }
+
+            if (spreadsheetId == null) {
+                var sheetUrlDraft by remember { mutableStateOf("") }
+                OutlinedTextField(
+                    value = sheetUrlDraft,
+                    onValueChange = { sheetUrlDraft = it },
+                    label = { Text("Paste shared sheet URL (if one exists)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (extractSpreadsheetId(sheetUrlDraft) != null) {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    settings.setSpreadsheetId(
+                                        extractSpreadsheetId(sheetUrlDraft) ?: return@launch
+                                    )
+                                    SyncScheduler.syncNow(context)
+                                }
+                            }) { Text("Link") }
+                        }
+                    }
+                )
+                TextButton(
+                    enabled = sheetsConnected,
+                    onClick = {
+                        scope.launch {
+                            sheetStatus = "Creating spreadsheet…"
+                            try {
+                                val info = withContext(Dispatchers.IO) {
+                                    val token = GoogleAuth.getAccessToken(context)
+                                        ?: throw IllegalStateException("Not authorized")
+                                    val api = SheetsApi(token)
+                                    val created = api.createSpreadsheet("Mileage Log")
+                                    api.ensureHeader(created.spreadsheetId)
+                                    created
+                                }
+                                settings.setSpreadsheetId(info.spreadsheetId)
+                                sheetStatus = "Spreadsheet created — share it with the other driver"
+                                SyncScheduler.syncNow(context)
+                            } catch (e: Exception) {
+                                sheetStatus = "Couldn't create spreadsheet: ${e.message}"
+                            }
+                        }
+                    }
+                ) { Text("Create new shared sheet") }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Spreadsheet linked", fontWeight = FontWeight.SemiBold)
+                        val lastSync = lastSyncTime?.let {
+                            "Last sync " + lastSyncFormat.format(
+                                Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
+                            )
+                        } ?: "Not synced yet"
+                        Text(
+                            lastSyncError?.let { "$lastSync · $it" } ?: lastSync,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (lastSyncError != null) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://docs.google.com/spreadsheets/d/$spreadsheetId")
+                            )
+                        )
+                    }) { Text("Open") }
+                    TextButton(onClick = { SyncScheduler.syncNow(context) }) { Text("Sync now") }
+                }
+            }
+            sheetStatus?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
 
             HorizontalDivider()
             Text("Driver", style = MaterialTheme.typography.titleMedium)
