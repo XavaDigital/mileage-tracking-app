@@ -1,8 +1,11 @@
 package com.xavadigital.mileagetracker.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,8 +20,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -44,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,6 +78,22 @@ private val tripDateFormat = DateTimeFormatter.ofPattern("EEE d MMM yyyy, h:mm a
 
 private fun formatTripDate(millis: Long): String =
     tripDateFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+
+/** Geocoded address when available, raw coordinates otherwise — never blank. */
+private fun locationLabel(address: String?, lat: Double?, lng: Double?): String? =
+    address ?: if (lat != null && lng != null) {
+        String.format(Locale.US, "%.4f, %.4f", lat, lng)
+    } else {
+        null
+    }
+
+private fun openInMaps(context: Context, lat: Double, lng: Double, label: String) {
+    val uri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(${Uri.encode(label)})")
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+    } catch (_: ActivityNotFoundException) {
+    }
+}
 
 private fun hasLocationPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
@@ -122,6 +145,8 @@ fun HomeScreen(
 
     val trips by AppGraph.tripDao.observeAll().collectAsState(initial = emptyList())
     val businesses by AppGraph.tripDao.observeBusinesses().collectAsState(initial = emptyList())
+    val purposes by AppGraph.tripDao.observePurposes().collectAsState(initial = emptyList())
+    var filter by rememberSaveable { mutableStateOf("ALL") }
     val recording by TripRecordingService.state.collectAsState()
     val driverName by AppGraph.settings.driverName.collectAsState(initial = null)
 
@@ -166,6 +191,51 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = filter == "ALL",
+                    onClick = { filter = "ALL" },
+                    label = { Text("All") }
+                )
+                FilterChip(
+                    selected = filter == "UNCLASSIFIED",
+                    onClick = { filter = "UNCLASSIFIED" },
+                    label = { Text("To classify") }
+                )
+                FilterChip(
+                    selected = filter == "WORK",
+                    onClick = { filter = "WORK" },
+                    label = { Text("Work") }
+                )
+                FilterChip(
+                    selected = filter == "PERSONAL",
+                    onClick = { filter = "PERSONAL" },
+                    label = { Text("Personal") }
+                )
+                businesses.forEach { name ->
+                    FilterChip(
+                        selected = filter == "BIZ:$name",
+                        onClick = { filter = "BIZ:$name" },
+                        label = { Text(name) }
+                    )
+                }
+            }
+
+            val filteredTrips = when {
+                filter == "UNCLASSIFIED" -> trips.filter { it.type == Trip.TYPE_UNCLASSIFIED }
+                filter == "WORK" -> trips.filter { it.type == Trip.TYPE_WORK }
+                filter == "PERSONAL" -> trips.filter { it.type == Trip.TYPE_PERSONAL }
+                filter.startsWith("BIZ:") ->
+                    trips.filter { it.business == filter.removePrefix("BIZ:") }
+                else -> trips
+            }
+
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -182,7 +252,7 @@ fun HomeScreen(
                     }
                 }
 
-                items(trips, key = { it.id }) { trip ->
+                items(filteredTrips, key = { it.id }) { trip ->
                     TripRow(trip = trip, onClick = { classifying = trip })
                 }
 
@@ -220,6 +290,7 @@ fun HomeScreen(
         ClassifyDialog(
             trip = trip,
             businesses = businesses,
+            purposes = purposes,
             onDismiss = { classifying = null },
             onSave = { updated ->
                 scope.launch {
@@ -347,7 +418,10 @@ private fun TripRow(trip: Trip, onClick: () -> Unit) {
                     fontWeight = FontWeight.Bold
                 )
             }
-            val route = listOfNotNull(trip.startAddress, trip.endAddress)
+            val route = listOfNotNull(
+                locationLabel(trip.startAddress, trip.startLat, trip.startLng),
+                locationLabel(trip.endAddress, trip.endLat, trip.endLng),
+            )
             if (route.isNotEmpty()) {
                 Text(
                     route.joinToString(" → "),
@@ -387,11 +461,13 @@ private fun TripRow(trip: Trip, onClick: () -> Unit) {
 private fun ClassifyDialog(
     trip: Trip,
     businesses: List<String>,
+    purposes: List<String>,
     onDismiss: () -> Unit,
     onSave: (Trip) -> Unit,
     onDelete: () -> Unit,
     onMerge: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     var isWork by remember {
         mutableStateOf(if (trip.type == Trip.TYPE_UNCLASSIFIED) true else trip.type == Trip.TYPE_WORK)
     }
@@ -404,7 +480,33 @@ private fun ClassifyDialog(
             Text(String.format(Locale.US, "%.1f km · %s", trip.distanceKm, formatTripDate(trip.startTime)))
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                val route = listOfNotNull(
+                    locationLabel(trip.startAddress, trip.startLat, trip.startLng),
+                    locationLabel(trip.endAddress, trip.endLat, trip.endLng),
+                )
+                if (route.isNotEmpty()) {
+                    Text(
+                        route.joinToString(" → "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (trip.startLat != null && trip.startLng != null) {
+                        TextButton(onClick = {
+                            openInMaps(context, trip.startLat, trip.startLng, "Trip start")
+                        }) { Text("Start on map") }
+                    }
+                    if (trip.endLat != null && trip.endLng != null) {
+                        TextButton(onClick = {
+                            openInMaps(context, trip.endLat, trip.endLng, "Trip end")
+                        }) { Text("End on map") }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = isWork,
@@ -431,18 +533,28 @@ private fun ClassifyDialog(
                     OutlinedTextField(
                         value = business,
                         onValueChange = { business = it },
-                        label = { Text("Business") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = purpose,
-                        onValueChange = { purpose = it },
-                        label = { Text("Purpose (optional)") },
+                        label = { Text("Business / category") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                if (purposes.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        purposes.take(8).forEach { text ->
+                            SuggestionChip(
+                                onClick = { purpose = text },
+                                label = { Text(text) }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = purpose,
+                    onValueChange = { purpose = it },
+                    label = { Text("Description — e.g. “visit rental property”") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (onMerge != null) {
                     TextButton(onClick = onMerge) {
                         Text("Merge into previous trip (short stop)")
@@ -456,7 +568,7 @@ private fun ClassifyDialog(
                     trip.copy(
                         type = if (isWork) Trip.TYPE_WORK else Trip.TYPE_PERSONAL,
                         business = if (isWork) business.trim().ifBlank { null } else null,
-                        purpose = if (isWork) purpose.trim().ifBlank { null } else null,
+                        purpose = purpose.trim().ifBlank { null },
                     )
                 )
             }) { Text("Save") }

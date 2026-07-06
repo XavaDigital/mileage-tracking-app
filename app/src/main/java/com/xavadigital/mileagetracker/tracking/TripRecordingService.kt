@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -26,7 +28,9 @@ import com.xavadigital.mileagetracker.data.Trip
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,6 +54,12 @@ class TripRecordingService : Service() {
     private var finishing = false
     private var source = Trip.SOURCE_MANUAL
 
+    // Stationary watchdog: prompt when the trip stops moving but keeps recording.
+    private var lastMovedTime = 0L
+    private var lastMovedDistance = 0.0
+    private var stationaryPrompted = false
+    private var monitorJob: Job? = null
+
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             result.locations.forEach { onLocation(it) }
@@ -69,6 +79,12 @@ class TripRecordingService : Service() {
                 intent.getStringExtra(EXTRA_SOURCE) ?: Trip.SOURCE_MANUAL
             )
             ACTION_STOP -> stopRecording()
+            ACTION_STILL_DRIVING -> {
+                lastMovedTime = System.currentTimeMillis()
+                lastMovedDistance = distanceMeters
+                stationaryPrompted = false
+                TripNotifications.cancelStationaryPrompt(this)
+            }
         }
         return START_STICKY
     }
@@ -97,6 +113,17 @@ class TripRecordingService : Service() {
         source = tripSource
         _state.value = RecordingState(startTime, 0.0)
         TripNotifications.cancelStartFallback(this)
+        playTone(start = true)
+
+        lastMovedTime = startTime
+        lastMovedDistance = 0.0
+        stationaryPrompted = false
+        monitorJob = scope.launch {
+            while (true) {
+                delay(60_000)
+                checkStationary()
+            }
+        }
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
             .setMinUpdateDistanceMeters(10f)
@@ -135,8 +162,11 @@ class TripRecordingService : Service() {
         }
         recording = false
         finishing = true
+        monitorJob?.cancel()
+        TripNotifications.cancelStationaryPrompt(this)
         fusedClient.removeLocationUpdates(locationCallback)
         _state.value = null
+        playTone(start = false)
 
         scope.launch {
             saveTrip()
@@ -195,6 +225,41 @@ class TripRecordingService : Service() {
         TripNotifications.postClassifyPrompt(this, trip.copy(id = id))
     }
 
+    private fun checkStationary() {
+        if (!recording) return
+        if (distanceMeters - lastMovedDistance >= 100.0) {
+            lastMovedDistance = distanceMeters
+            lastMovedTime = System.currentTimeMillis()
+            if (stationaryPrompted) {
+                stationaryPrompted = false
+                TripNotifications.cancelStationaryPrompt(this)
+            }
+            return
+        }
+        if (!stationaryPrompted &&
+            System.currentTimeMillis() - lastMovedTime >= STATIONARY_PROMPT_MS
+        ) {
+            stationaryPrompted = true
+            TripNotifications.postStationaryPrompt(this)
+        }
+    }
+
+    /** Short beep on start, double beep on end — audible confirmation of recording. */
+    private fun playTone(start: Boolean) {
+        try {
+            val generator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            generator.startTone(
+                if (start) ToneGenerator.TONE_PROP_ACK else ToneGenerator.TONE_PROP_BEEP2,
+                250
+            )
+            scope.launch {
+                delay(500)
+                generator.release()
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun createChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -237,9 +302,11 @@ class TripRecordingService : Service() {
     companion object {
         const val ACTION_START = "com.xavadigital.mileagetracker.action.START_TRIP"
         const val ACTION_STOP = "com.xavadigital.mileagetracker.action.STOP_TRIP"
+        const val ACTION_STILL_DRIVING = "com.xavadigital.mileagetracker.action.STILL_DRIVING"
         const val EXTRA_SOURCE = "source"
         private const val CHANNEL_ID = "trip_recording"
         private const val NOTIFICATION_ID = 1
+        private const val STATIONARY_PROMPT_MS = 10 * 60_000L
 
         private val _state = MutableStateFlow<RecordingState?>(null)
 

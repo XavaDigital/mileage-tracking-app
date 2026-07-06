@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.xavadigital.mileagetracker.tracking.UnclassifiedReminderWorker
 import java.util.concurrent.TimeUnit
 
 object SyncScheduler {
@@ -24,6 +25,17 @@ object SyncScheduler {
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "sheet-sync-periodic",
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+    }
+
+    /** Twice-daily unclassified-trips reminder (silent when there's no backlog). */
+    fun scheduleUnclassifiedReminder(context: Context) {
+        val request = PeriodicWorkRequestBuilder<UnclassifiedReminderWorker>(12, TimeUnit.HOURS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "unclassified-reminder",
             ExistingPeriodicWorkPolicy.KEEP,
             request
         )

@@ -41,4 +41,10 @@ interface TripDao {
             "WHERE business IS NOT NULL AND business != '' ORDER BY business"
     )
     fun observeBusinesses(): Flow<List<String>>
+
+    @Query(
+        "SELECT DISTINCT purpose FROM trips " +
+            "WHERE purpose IS NOT NULL AND purpose != '' ORDER BY purpose"
+    )
+    fun observePurposes(): Flow<List<String>>
 }

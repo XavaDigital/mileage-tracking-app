@@ -20,6 +20,8 @@ object TripNotifications {
     private const val REVIEW_CHANNEL_ID = "trip_review"
     private const val START_FALLBACK_NOTIFICATION_ID = 2
     private const val DISCARDED_NOTIFICATION_ID = 4
+    private const val STATIONARY_NOTIFICATION_ID = 5
+    private const val REMINDER_NOTIFICATION_ID = 6
 
     private fun ensureReviewChannel(context: Context) {
         val channel = NotificationChannel(
@@ -129,6 +131,58 @@ object TripNotifications {
 
     fun cancelStartFallback(context: Context) {
         NotificationManagerCompat.from(context).cancel(START_FALLBACK_NOTIFICATION_ID)
+    }
+
+    /** Recording continues but the car hasn't moved — ask instead of guessing. */
+    fun postStationaryPrompt(context: Context) {
+        ensureReviewChannel(context)
+        val stopIntent = PendingIntent.getService(
+            context,
+            5,
+            Intent(context, TripRecordingService::class.java)
+                .setAction(TripRecordingService.ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val keepIntent = PendingIntent.getService(
+            context,
+            6,
+            Intent(context, TripRecordingService::class.java)
+                .setAction(TripRecordingService.ACTION_STILL_DRIVING),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification = NotificationCompat.Builder(context, REVIEW_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentTitle("Still driving?")
+            .setContentText("No movement for 10 minutes — should the trip end?")
+            .setAutoCancel(false)
+            .addAction(0, "End trip", stopIntent)
+            .addAction(0, "Still driving", keepIntent)
+            .build()
+        notifySafe(context, STATIONARY_NOTIFICATION_ID, notification)
+    }
+
+    fun cancelStationaryPrompt(context: Context) {
+        NotificationManagerCompat.from(context).cancel(STATIONARY_NOTIFICATION_ID)
+    }
+
+    /** Periodic nudge while unclassified trips are piling up. */
+    fun postUnclassifiedReminder(context: Context, count: Int) {
+        ensureReviewChannel(context)
+        val openApp = PendingIntent.getActivity(
+            context,
+            7,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val plural = if (count == 1) "trip needs" else "trips need"
+        val notification = NotificationCompat.Builder(context, REVIEW_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_agenda)
+            .setContentTitle("$count $plural classifying")
+            .setContentText("Tap to mark them work, personal, or delete them")
+            .setContentIntent(openApp)
+            .setAutoCancel(true)
+            .build()
+        notifySafe(context, REMINDER_NOTIFICATION_ID, notification)
     }
 
     /** The recording ended but produced nothing worth keeping — say so, don't be silent. */

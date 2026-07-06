@@ -9,5 +9,6 @@ class MileageApp : Application() {
         super.onCreate()
         AppGraph.init(this)
         SyncScheduler.schedulePeriodic(this)
+        SyncScheduler.scheduleUnclassifiedReminder(this)
     }
 }
