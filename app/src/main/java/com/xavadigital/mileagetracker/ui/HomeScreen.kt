@@ -145,60 +145,63 @@ fun HomeScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(padding)
         ) {
-            item {
-                RecordingCard(
-                    recording = recording,
-                    onStart = {
-                        if (hasLocationPermission(context)) {
-                            TripRecordingService.start(context)
-                        } else {
-                            val wanted = mutableListOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION,
-                            )
-                            if (Build.VERSION.SDK_INT >= 33) {
-                                wanted.add(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                            permissionLauncher.launch(wanted.toTypedArray())
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val unclassified = trips.count { it.type == Trip.TYPE_UNCLASSIFIED }
+                if (unclassified > 0) {
+                    item {
+                        Text(
+                            "$unclassified trip${if (unclassified == 1) "" else "s"} to classify — tap a trip below",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+
+                items(trips, key = { it.id }) { trip ->
+                    TripRow(trip = trip, onClick = { classifying = trip })
+                }
+
+                if (trips.isEmpty() && recording == null) {
+                    item {
+                        Text(
+                            "No trips yet. Tap Start Trip when you set off.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 24.dp)
+                        )
+                    }
+                }
+            }
+
+            // Pinned at the bottom, within one-handed thumb reach.
+            RecordingCard(
+                recording = recording,
+                onStart = {
+                    if (hasLocationPermission(context)) {
+                        TripRecordingService.start(context)
+                    } else {
+                        val wanted = mutableListOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                        )
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            wanted.add(Manifest.permission.POST_NOTIFICATIONS)
                         }
-                    },
-                    onStop = { TripRecordingService.stop(context) }
-                )
-            }
-
-            val unclassified = trips.count { it.type == Trip.TYPE_UNCLASSIFIED }
-            if (unclassified > 0) {
-                item {
-                    Text(
-                        "$unclassified trip${if (unclassified == 1) "" else "s"} to classify — tap a trip below",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-
-            items(trips, key = { it.id }) { trip ->
-                TripRow(trip = trip, onClick = { classifying = trip })
-            }
-
-            if (trips.isEmpty() && recording == null) {
-                item {
-                    Text(
-                        "No trips yet. Tap Start Trip when you set off.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 24.dp)
-                    )
-                }
-            }
+                        permissionLauncher.launch(wanted.toTypedArray())
+                    }
+                },
+                onStop = { TripRecordingService.stop(context) },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+            )
         }
     }
 
@@ -261,8 +264,9 @@ private fun RecordingCard(
     recording: RecordingState?,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -270,8 +274,13 @@ private fun RecordingCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (recording == null) {
-                Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
-                    Text("Start Trip")
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Text("Start Trip", style = MaterialTheme.typography.titleMedium)
                 }
             } else {
                 var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -296,8 +305,13 @@ private fun RecordingCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(12.dp))
-                OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
-                    Text("End Trip")
+                OutlinedButton(
+                    onClick = onStop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Text("End Trip", style = MaterialTheme.typography.titleMedium)
                 }
             }
         }
