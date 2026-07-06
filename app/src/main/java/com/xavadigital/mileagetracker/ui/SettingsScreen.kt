@@ -259,10 +259,24 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             PermissionRow(
                 title = "Background location",
-                subtitle = "“Allow all the time” — needed to start recording when the car connects",
+                subtitle = if (Build.VERSION.SDK_INT >= 30) {
+                    // Android 11+ has no dialog for this — only the settings page.
+                    "In app settings choose Permissions → Location → “Allow all the time”"
+                } else {
+                    "“Allow all the time” — needed to start recording when the car connects"
+                },
                 granted = bgLocationGranted,
                 onRequest = {
-                    bgLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    } else {
+                        bgLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
                 }
             )
             PermissionRow(
