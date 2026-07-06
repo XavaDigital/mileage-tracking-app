@@ -16,12 +16,20 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // OAuth client id (public, not a secret). Unused by the Play Services
-        // authorization flow itself — kept for future Google ID-token needs.
+        // OAuth client ids (public, not secrets). Neither is referenced by the
+        // Play Services authorization flow: the Android client is matched by
+        // package name + signing SHA-1; the web client would only be needed as
+        // serverClientId for Google ID-token sign-in. Recorded here as the
+        // single source of truth for the Google Cloud project config.
         buildConfigField(
             "String",
-            "GOOGLE_CLIENT_ID",
+            "GOOGLE_WEB_CLIENT_ID",
             "\"273765857524-837m333nlq58hl8ccmksnpir2ghjhs4d.apps.googleusercontent.com\""
+        )
+        buildConfigField(
+            "String",
+            "GOOGLE_ANDROID_CLIENT_ID",
+            "\"273765857524-b64np3p355kvmq551n94anekmfcmfbdr.apps.googleusercontent.com\""
         )
     }
 
