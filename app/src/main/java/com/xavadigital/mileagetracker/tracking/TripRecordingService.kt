@@ -147,7 +147,20 @@ class TripRecordingService : Service() {
     private suspend fun saveTrip() {
         val endTime = System.currentTimeMillis()
         // Fewer than 2 fixes or under 50 m means we never really went anywhere.
-        if (points.size < 2 || distanceMeters < 50.0) return
+        if (points.size < 2 || distanceMeters < 50.0) {
+            val reason = if (points.size < 2) {
+                "GPS never got a fix — this usually means the phone was indoors. " +
+                    "Trips need at least 50 m of recorded movement to be saved."
+            } else {
+                String.format(
+                    Locale.US,
+                    "Only %.0f m of movement was recorded — trips under 50 m are discarded.",
+                    distanceMeters
+                )
+            }
+            TripNotifications.postTripDiscarded(this, reason)
+            return
+        }
 
         val first = points.first()
         val last = points.last()

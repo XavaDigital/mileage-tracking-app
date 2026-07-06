@@ -19,6 +19,7 @@ import java.util.Locale
 object TripNotifications {
     private const val REVIEW_CHANNEL_ID = "trip_review"
     private const val START_FALLBACK_NOTIFICATION_ID = 2
+    private const val DISCARDED_NOTIFICATION_ID = 4
 
     private fun ensureReviewChannel(context: Context) {
         val channel = NotificationChannel(
@@ -128,6 +129,19 @@ object TripNotifications {
 
     fun cancelStartFallback(context: Context) {
         NotificationManagerCompat.from(context).cancel(START_FALLBACK_NOTIFICATION_ID)
+    }
+
+    /** The recording ended but produced nothing worth keeping — say so, don't be silent. */
+    fun postTripDiscarded(context: Context, reason: String) {
+        ensureReviewChannel(context)
+        val notification = NotificationCompat.Builder(context, REVIEW_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setContentTitle("Trip not saved")
+            .setContentText(reason)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(reason))
+            .setAutoCancel(true)
+            .build()
+        notifySafe(context, DISCARDED_NOTIFICATION_ID, notification)
     }
 
     private fun actionIntent(context: Context, action: String, tripId: Long): PendingIntent =
