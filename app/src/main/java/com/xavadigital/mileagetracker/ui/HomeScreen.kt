@@ -76,6 +76,21 @@ private fun hasLocationPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
 
+private fun missingStartPermissions(context: Context): List<String> {
+    val missing = mutableListOf<String>()
+    if (!hasLocationPermission(context)) {
+        missing += Manifest.permission.ACCESS_FINE_LOCATION
+        missing += Manifest.permission.ACCESS_COARSE_LOCATION
+    }
+    if (Build.VERSION.SDK_INT >= 33 &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+    ) {
+        missing += Manifest.permission.POST_NOTIFICATIONS
+    }
+    return missing
+}
+
 /**
  * The chronologically previous trip, if this trip looks like a continuation of it —
  * a petrol stop, school pickup, etc.: started within 15 min and 300 m of where the
@@ -124,8 +139,9 @@ fun HomeScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted ->
-        if (granted[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+    ) { _ ->
+        // Start as long as location is in place — notifications are nice-to-have.
+        if (hasLocationPermission(context)) {
             TripRecordingService.start(context)
         }
     }
@@ -186,17 +202,11 @@ fun HomeScreen(
             RecordingCard(
                 recording = recording,
                 onStart = {
-                    if (hasLocationPermission(context)) {
+                    val missing = missingStartPermissions(context)
+                    if (missing.isEmpty()) {
                         TripRecordingService.start(context)
                     } else {
-                        val wanted = mutableListOf(
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                        )
-                        if (Build.VERSION.SDK_INT >= 33) {
-                            wanted.add(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                        permissionLauncher.launch(wanted.toTypedArray())
+                        permissionLauncher.launch(missing.toTypedArray())
                     }
                 },
                 onStop = { TripRecordingService.stop(context) },

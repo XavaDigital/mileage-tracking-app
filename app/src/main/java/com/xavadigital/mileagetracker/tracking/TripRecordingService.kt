@@ -158,6 +158,8 @@ class TripRecordingService : Service() {
                     distanceMeters
                 )
             }
+            // Toast for when the app is open in hand; notification for auto trips.
+            android.widget.Toast.makeText(this, "Trip not saved: $reason", android.widget.Toast.LENGTH_LONG).show()
             TripNotifications.postTripDiscarded(this, reason)
             return
         }

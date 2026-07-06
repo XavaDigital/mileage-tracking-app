@@ -86,6 +86,11 @@ private fun hasBackgroundLocation(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
 
+private fun hasNotificationsPermission(context: Context): Boolean =
+    Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+        PackageManager.PERMISSION_GRANTED
+
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
     context.getSystemService(PowerManager::class.java)
         ?.isIgnoringBatteryOptimizations(context.packageName) == true
@@ -160,6 +165,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val btGranted = remember(refresh) { hasBtConnectPermission(context) }
     val bgLocationGranted = remember(refresh) { hasBackgroundLocation(context) }
     val batteryExempt = remember(refresh) { isIgnoringBatteryOptimizations(context) }
+    val notificationsGranted = remember(refresh) { hasNotificationsPermission(context) }
 
     var showDevicePicker by remember { mutableStateOf(false) }
     var sheetStatus by remember { mutableStateOf<String?>(null) }
@@ -189,6 +195,20 @@ fun SettingsScreen(onBack: () -> Unit) {
     val bgLocationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refresh++ }
+    val notificationsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        refresh++
+        if (!granted) {
+            // Permanently denied — the dialog won't show again; settings is the way.
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${context.packageName}")
+                )
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -276,6 +296,16 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                     } else {
                         bgLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
+                }
+            )
+            PermissionRow(
+                title = "Notifications",
+                subtitle = "Trip-finished prompts, passenger suggestions, discard reasons",
+                granted = notificationsGranted,
+                onRequest = {
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
             )
